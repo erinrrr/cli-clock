@@ -215,3 +215,7 @@ During stopwatch or timer modes:
 ## Contributing
 
 Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
+
+## TO-DO
+- [ ] dynamic update of the status bar
+- [ ] input handler on normal mode 
