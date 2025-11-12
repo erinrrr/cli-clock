@@ -14,7 +14,7 @@ A feature-rich command-line digital clock with Pomodoro timer, stopwatch, and co
 - **Customizable Display** - Bold numbers and color options
 
 ## Image
-[!plot](files/cli-clock.png)
+![CLI Clock](files/cli-clock.png)
 
 ## Requirements
 
