@@ -13,6 +13,9 @@ A feature-rich command-line digital clock with Pomodoro timer, stopwatch, and co
 - **Pause/Resume** - All timers support pause and resume functionality
 - **Customizable Display** - Bold numbers and color options
 
+## Image
+[[cli-clock.png]]
+
 ## Requirements
 
 - Python 3.6+
@@ -23,7 +26,7 @@ A feature-rich command-line digital clock with Pomodoro timer, stopwatch, and co
 
 1. Clone or download the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/erinrrr/cli-clock.git
 cd cli-clock
 ```
 
@@ -209,14 +212,6 @@ During stopwatch or timer modes:
 - Script requires Unix-like system (Linux, macOS)
 - Windows users can use WSL (Windows Subsystem for Linux)
 
-## License
-
-[Specify your license here]
-
 ## Contributing
 
 Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
-
-## Author
-
-[Your name/contact]
