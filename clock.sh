@@ -52,7 +52,7 @@ ${YELLOW}Options:${NC}
   -b, --bold            Use bold/thick numbers
   --white               All white text
   --black               All black text
-  --no-bell             Disable bell sound
+  --bell                Enable bell sound (off by default)
 
 ${YELLOW}Examples:${NC}
   clock                         # Show current time
@@ -77,46 +77,70 @@ For detailed help: clock.py --help
 EOF
 }
 
-# Parse command
-COMMAND=""
-if [[ $# -gt 0 ]] && [[ ! "$1" =~ ^- ]]; then
-    COMMAND="$1"
-    shift
-fi
+# Separate flags from positional arguments so the command and its value can
+# be found regardless of where flags are placed - e.g. both
+# "clock -f timer 5:00" and "clock timer 5:00 -f" should work.
+# -t/--timer and -p/--pomodoro take a value as the NEXT token, so that value
+# must stay paired with the flag in OPTS rather than being treated as a
+# positional command word (e.g. "clock -t 10:00" should not see "10:00" as
+# an unknown command).
+OPTS=()
+POSITIONAL=()
+ARGS=("$@")
+i=0
+while [[ $i -lt ${#ARGS[@]} ]]; do
+    arg="${ARGS[$i]}"
+    case "$arg" in
+        -t|--timer|-p|--pomodoro)
+            OPTS+=("$arg")
+            i=$((i + 1))
+            if [[ $i -lt ${#ARGS[@]} ]]; then
+                OPTS+=("${ARGS[$i]}")
+            fi
+            ;;
+        -*)
+            OPTS+=("$arg")
+            ;;
+        *)
+            POSITIONAL+=("$arg")
+            ;;
+    esac
+    i=$((i + 1))
+done
+
+COMMAND="${POSITIONAL[0]:-}"
+VALUE="${POSITIONAL[1]:-}"
+EXTRA=("${POSITIONAL[@]:2}")
 
 # Execute based on command
 case "$COMMAND" in
     "")
         # No command - show clock
-        exec python3 "$CLOCK_SCRIPT" "$@"
+        exec python3 "$CLOCK_SCRIPT" "${OPTS[@]}"
         ;;
 
     pomodoro)
         # Pomodoro mode
-        if [[ $# -gt 0 ]] && [[ ! "$1" =~ ^- ]]; then
-            TIMES="$1"
-            shift
-            exec python3 "$CLOCK_SCRIPT" -p "$TIMES" "$@"
+        if [[ -n "$VALUE" ]]; then
+            exec python3 "$CLOCK_SCRIPT" -p "$VALUE" "${OPTS[@]}" "${EXTRA[@]}"
         else
-            exec python3 "$CLOCK_SCRIPT" -p 25,5 "$@"
+            exec python3 "$CLOCK_SCRIPT" -p 25,5 "${OPTS[@]}"
         fi
         ;;
 
     timer)
         # Timer mode
-        if [[ $# -eq 0 ]] || [[ "$1" =~ ^- ]]; then
+        if [[ -z "$VALUE" ]]; then
             echo -e "${RED}Error: timer requires a time argument${NC}"
             echo "Example: clock timer 10:00"
             exit 1
         fi
-        TIME="$1"
-        shift
-        exec python3 "$CLOCK_SCRIPT" -t "$TIME" "$@"
+        exec python3 "$CLOCK_SCRIPT" -t "$VALUE" "${OPTS[@]}" "${EXTRA[@]}"
         ;;
 
     stopwatch)
         # Stopwatch mode
-        exec python3 "$CLOCK_SCRIPT" -s "$@"
+        exec python3 "$CLOCK_SCRIPT" -s "${OPTS[@]}" "${POSITIONAL[@]:1}"
         ;;
 
     help|--help|-h)

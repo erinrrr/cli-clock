@@ -49,13 +49,13 @@ class ClockConfig:
         bold: Use thick/bold number segments
         white: Override all colors to white
         black: Override all colors to black
-        bell_enabled: Enable terminal bell on timer completion
+        bell_enabled: Enable terminal bell on timer completion (off by default)
     """
     focus: bool = False
     bold: bool = False
     white: bool = False
     black: bool = False
-    bell_enabled: bool = True
+    bell_enabled: bool = False
     
     def get_color(self, default_color: str) -> str:
         """Return color based on override settings or default."""
@@ -103,6 +103,7 @@ DISPLAY_LINES_TIME_ONLY = 5
 DISPLAY_LINES_WITH_LABEL = 7
 DISPLAY_LINES_FOCUS_WITH_BAR = 8
 DISPLAY_LINES_WITH_BAR = 9
+DISPLAY_LINES_FOCUS_WITH_STATUS = 6
 MIN_BAR_LENGTH = 20
 MAX_BAR_LENGTH = 100
 BAR_MARGIN = 20
@@ -136,8 +137,20 @@ class TerminalUtils:
     
     @staticmethod
     def ring_bell() -> None:
-        """Ring terminal bell (ASCII BEL character)."""
-        print("\a", end='', flush=True)
+        """Ring terminal bell to signal timer completion.
+        
+        Sends the BEL character a few times with brief pauses, since many
+        terminal emulators rate-limit or coalesce bells received in quick
+        succession. Note: most terminal apps (Terminal.app, iTerm2, GNOME
+        Terminal, VS Code's integrated terminal, etc.) ship with the
+        audible bell disabled by default, showing a silent visual flash
+        instead or nothing at all. If you don't hear anything, check your
+        terminal's preferences for a "Bell" / "Audible bell" setting.
+        """
+        for _ in range(3):
+            sys.stdout.write('\a')
+            sys.stdout.flush()
+            time.sleep(0.15)
 
 
 class Display:
@@ -170,15 +183,14 @@ class Display:
         
         for line in lines:
             padding = max(0, (terminal_width - len(line)) // 2)
-            print(f"{' ' * padding}{col}{line}{Colors.RESET}")
+            print(f"\033[2K\r{' ' * padding}{col}{line}{Colors.RESET}")
         print()
     
     def print_label(self, label: str, color: str = Colors.MAGENTA) -> None:
         """Print centered label text below time display."""
-        terminal_width = TerminalUtils.get_width()
         col = self.config.get_color(color)
         padding = TerminalUtils.center_padding(len(label))
-        print(f"\r{' ' * terminal_width}\r{' ' * padding}{col}{label}{Colors.RESET}\n")
+        print(f"\033[2K\r{' ' * padding}{col}{label}{Colors.RESET}\n")
     
     def print_progress_bar(self, progress: float, color: str = Colors.GRAY) -> None:
         """Print horizontal progress bar.
@@ -195,7 +207,7 @@ class Display:
         bar = '█' * filled + '░' * (bar_length - filled)
         
         bar_color = self.config.get_color(color)
-        print(f"{' ' * bar_padding}[{bar_color}{bar}{Colors.RESET}] {progress * 100:.1f}%")
+        print(f"\033[2K\r{' ' * bar_padding}[{bar_color}{bar}{Colors.RESET}] {progress * 100:.1f}%")
         print()
 
 
@@ -209,16 +221,20 @@ class InputHandler:
         self.old_settings = termios.tcgetattr(self.fd)
     
     def __enter__(self):
-        """Set terminal to cbreak mode with no echo."""
+        """Set terminal to cbreak mode with no echo, and hide the cursor."""
         tty.setcbreak(self.fd)
         attr = termios.tcgetattr(self.fd)
         attr[3] = attr[3] & ~termios.ECHO
         termios.tcsetattr(self.fd, termios.TCSADRAIN, attr)
+        sys.stdout.write('\033[?25l')
+        sys.stdout.flush()
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Restore original terminal settings."""
+        """Restore original terminal settings and show the cursor again."""
         termios.tcsetattr(self.fd, termios.TCSADRAIN, self.old_settings)
+        sys.stdout.write('\033[?25h')
+        sys.stdout.flush()
     
     def get_key(self) -> Optional[str]:
         """Check for key press without blocking.
@@ -258,46 +274,53 @@ def parse_duration(duration_str: str) -> int:
     parts = duration_str.split(':')
     
     try:
-        if len(parts) == 1:
-            return int(parts[0])
-        elif len(parts) == 2:
-            return int(parts[0]) * 60 + int(parts[1])
-        elif len(parts) == 3:
-            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-        else:
-            raise ValueError("Invalid format")
-    except (ValueError, IndexError):
+        nums = [int(p) for p in parts]
+    except ValueError:
+        raise ValueError("Duration must be in format: MM:SS, HH:MM:SS, or seconds")
+    
+    if any(n < 0 for n in nums):
+        raise ValueError("Duration components cannot be negative")
+    
+    if len(nums) == 1:
+        return nums[0]
+    elif len(nums) == 2:
+        return nums[0] * 60 + nums[1]
+    elif len(nums) == 3:
+        return nums[0] * 3600 + nums[1] * 60 + nums[2]
+    else:
         raise ValueError("Duration must be in format: MM:SS, HH:MM:SS, or seconds")
 
 
 def clock_mode(config: ClockConfig) -> None:
-    """Display current time, updating every second."""
+    """Display current time, updating every second. Press 'q' to quit."""
     TerminalUtils.clear_screen()
     display = Display(config)
     
-    now = datetime.now()
-    time_str = now.strftime("%H:%M:%S")
-    date_str = now.strftime("%A, %B %d, %Y")
-    
-    display.print_time(time_str, Colors.CYAN)
-    if not config.focus:
-        display.print_label(date_str)
-    
     lines_to_move = DISPLAY_LINES_WITH_LABEL if not config.focus else DISPLAY_LINES_TIME_ONLY
+    first_iteration = True
     
-    try:
-        while True:
-            time.sleep(1)
-            now = datetime.now()
-            time_str = now.strftime("%H:%M:%S")
-            date_str = now.strftime("%A, %B %d, %Y")
-            
-            TerminalUtils.move_up(lines_to_move)
-            display.print_time(time_str, Colors.CYAN, move_back=True)
-            if not config.focus:
-                display.print_label(date_str)
-    except KeyboardInterrupt:
-        print()
+    with InputHandler() as input_handler:
+        try:
+            while True:
+                key = input_handler.get_key()
+                if key == 'q':
+                    break
+                
+                now = datetime.now()
+                time_str = now.strftime("%H:%M:%S")
+                date_str = now.strftime("%A, %B %d, %Y")
+                
+                if not first_iteration:
+                    TerminalUtils.move_up(lines_to_move)
+                first_iteration = False
+                
+                display.print_time(time_str, Colors.CYAN, move_back=True)
+                if not config.focus:
+                    display.print_label(date_str)
+                
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            print()
 
 
 def stopwatch_mode(config: ClockConfig) -> None:
@@ -312,7 +335,7 @@ def stopwatch_mode(config: ClockConfig) -> None:
         pause_start = 0
         first_iteration = True
         
-        lines_to_move = DISPLAY_LINES_WITH_LABEL
+        lines_to_move = DISPLAY_LINES_WITH_LABEL if not config.focus else DISPLAY_LINES_FOCUS_WITH_STATUS
         
         try:
             while True:
@@ -343,14 +366,13 @@ def stopwatch_mode(config: ClockConfig) -> None:
                     label = "⏸ Paused (q: resume, r: reset)" if paused else "▶ Running (q: pause, r: reset)"
                     display.print_label(label)
                 else:
-                    terminal_width = TerminalUtils.get_width()
                     if paused:
                         pause_text = "⏸ Paused"
                         col = config.get_color(Colors.GRAY)
                         padding = TerminalUtils.center_padding(len(pause_text))
-                        print(f"{' ' * padding}{col}{pause_text}{Colors.RESET}\n")
+                        print(f"\033[2K\r{' ' * padding}{col}{pause_text}{Colors.RESET}")
                     else:
-                        print()
+                        print(f"\033[2K\r")
                 
                 time.sleep(0.1)
                 
@@ -373,20 +395,30 @@ def countdown_timer(total_seconds: int, label: str, color: str, config: ClockCon
         True if interrupted by Ctrl+C, False if completed
     """
     display = Display(config)
-    remaining = total_seconds
     paused = False
     first_iteration = True
+    elapsed = 0
+    start_time = time.time()
+    pause_start = 0.0
     
     lines_to_move = DISPLAY_LINES_FOCUS_WITH_BAR if config.focus else DISPLAY_LINES_WITH_BAR
     
     try:
-        while remaining >= 0:
+        while True:
             key = input_handler.get_key()
             if key == 'q':
                 paused = not paused
+                if paused:
+                    pause_start = time.time()
+                else:
+                    start_time += (time.time() - pause_start)
+            
+            if not paused:
+                elapsed = int(time.time() - start_time)
+            
+            remaining = max(0, total_seconds - elapsed)
             
             if not first_iteration:
-                time.sleep(1)
                 TerminalUtils.move_up(lines_to_move)
             first_iteration = False
             
@@ -396,21 +428,22 @@ def countdown_timer(total_seconds: int, label: str, color: str, config: ClockCon
                 label_text = f"⏸ Paused - {label}" if paused else f"▶ {label}"
                 display.print_label(label_text)
             else:
-                terminal_width = TerminalUtils.get_width()
                 if paused:
                     pause_text = "⏸ Paused"
                     col = config.get_color(Colors.GRAY)
                     padding = TerminalUtils.center_padding(len(pause_text))
-                    print(f"\r{' ' * terminal_width}\r{' ' * padding}{col}{pause_text}{Colors.RESET}")
+                    print(f"\033[2K\r{' ' * padding}{col}{pause_text}{Colors.RESET}")
                 else:
-                    print(f"\r{' ' * terminal_width}\r")
+                    print(f"\033[2K\r")
             
             progress = (total_seconds - remaining) / total_seconds if total_seconds > 0 else 1.0
             bar_color = color if not config.focus else Colors.GRAY
             display.print_progress_bar(progress, bar_color)
             
-            if not paused:
-                remaining -= 1
+            if remaining <= 0 and not paused:
+                break
+            
+            time.sleep(0.1)
         
         return False
     except KeyboardInterrupt:
@@ -478,9 +511,9 @@ def timer_mode(duration_str: str, config: ClockConfig) -> None:
     TerminalUtils.clear_screen()
     
     with InputHandler() as input_handler:
-        countdown_timer(total_seconds, "Countdown Timer", Colors.YELLOW, config, input_handler)
+        interrupted = countdown_timer(total_seconds, "Countdown Timer", Colors.YELLOW, config, input_handler)
     
-    if config.bell_enabled:
+    if config.bell_enabled and not interrupted:
         TerminalUtils.ring_bell()
 
 
@@ -521,8 +554,8 @@ controls:
                        help='override colors to white')
     parser.add_argument('--black', action='store_true',
                        help='override colors to black')
-    parser.add_argument('--no-bell', action='store_true',
-                       help='disable completion bell sound')
+    parser.add_argument('--bell', action='store_true',
+                       help='enable terminal bell on timer/pomodoro completion (off by default)')
     parser.add_argument('-p', '--pomodoro', metavar='W,B',
                        help='work,break minutes (e.g., 25,5)')
     parser.add_argument('-s', '--stopwatch', action='store_true',
@@ -541,7 +574,7 @@ controls:
         bold=args.bold,
         white=args.white,
         black=args.black,
-        bell_enabled=not args.no_bell
+        bell_enabled=args.bell
     )
     
     try:

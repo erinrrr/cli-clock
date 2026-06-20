@@ -40,107 +40,10 @@ chmod +x clock.py
 sudo ln -s $(pwd)/clock.py /usr/local/bin/clock
 ```
 
-## Usage
-
-### Basic Clock
-Display current time with date:
-```bash
-./clock.py
-```
-
-### Stopwatch Mode
-```bash
-./clock.py -s
-```
-**Controls:**
-- `q` - Pause/Resume
-- `r` - Reset
-- `Ctrl+C` - Exit
-
-### Countdown Timer
-Supports multiple time formats:
-```bash
-./clock.py -t 10:30      # 10 minutes 30 seconds
-./clock.py -t 90         # 90 seconds
-./clock.py -t 1:30:00    # 1 hour 30 minutes
-```
-**Controls:**
-- `q` - Pause/Resume
-- `Ctrl+C` - Exit
-
-### Pomodoro Timer
-Work and break sessions (format: WORK,BREAK in minutes):
-```bash
-./clock.py -p 25,5       # 25 min work, 5 min break
-./clock.py -p 50,10      # 50 min work, 10 min break
-```
-**Controls:**
-- `q` - Pause/Resume during any session
-- `Ctrl+C` - Exit
-
-### Display Options
-
-**Bold Numbers:**
-```bash
-./clock.py -b
-./clock.py --bold
-```
-
-**Focus Mode** (minimal display):
-```bash
-./clock.py -f
-./clock.py --focus
-```
-
-**Color Options:**
-```bash
-./clock.py --white       # All white text
-./clock.py --black       # All black text
-```
-
-**Disable Bell Sound:**
-```bash
-./clock.py --no-bell
-```
-
-### Combined Options
-Options can be combined for custom displays:
-```bash
-./clock.py -fb -s              # Focus mode + bold stopwatch
-./clock.py -f -p 25,5          # Focus mode Pomodoro
-./clock.py -b --white -t 5:00  # Bold white timer
-```
-
-## Examples
-
-### Standard Pomodoro Session
-```bash
-./clock.py -p 25,5
-```
-Runs continuous Pomodoro sessions with 25-minute work periods and 5-minute breaks.
-
-### Quick Timer with Focus Mode
-```bash
-./clock.py -f -t 10:00
-```
-10-minute countdown timer with minimal display.
-
-### Bold Stopwatch
-```bash
-./clock.py -b -s
-```
-Stopwatch with thick, bold numbers.
-
-### Minimal Clock
-```bash
-./clock.py -f
-```
-Current time only, no date label.
-
 ## Command Reference
 
 ```
-usage: clock.py [-h] [-f] [-b] [--white] [--black] [--no-bell]
+usage: clock.py [-h] [-f] [-b] [--white] [--black] [--bell]
                 [-p WORK,BREAK] [-s] [-t TIME]
 
 CLI Digital Clock with Timer Features
@@ -151,7 +54,7 @@ options:
   -b, --bold            Use bold/thick numbers
   --white               Display all text in white
   --black               Display all text in black
-  --no-bell             Disable bell sound for timers
+  --bell                Enable bell sound on timer/pomodoro completion (off by default)
   -p WORK,BREAK, --pomodoro WORK,BREAK
                         Pomodoro timer (work,break minutes, e.g., 25,5)
   -s, --stopwatch       Stopwatch mode
@@ -180,6 +83,8 @@ During stopwatch or timer modes:
 | `Ctrl+C` | Exit program |
 
 ## Tips
+
+> you can find more usage examples in the [[files/usage & examples.md]] file!
 
 1. **Use focus mode for distraction-free timing:**
    ```bash
@@ -217,5 +122,5 @@ During stopwatch or timer modes:
 Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
 
 ## TO-DO
-- [ ] dynamic update of the status bar
-- [ ] input handler on normal mode 
+- [x] dynamic update of the status bar (display now redraws cleanly on terminal resize, including downscale)
+- [x] input handler on normal mode (press 'q' to quit the plain clock display)
